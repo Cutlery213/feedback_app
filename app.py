@@ -2,6 +2,8 @@ import pandas as pd
 import re
 import io
 import streamlit as st
+import vertexai
+from vertexai.generative_models import GenerativeModel
 
 class FeedbackParser:
     def __init__(self):
@@ -133,7 +135,7 @@ if __name__ == "__main__":
 
     if 'records' in st.session_state:
         records = st.session_state['records']
-        view_mode = st.radio("Select View Mode", ["Compiled View", "Thematic View"])
+        view_mode = st.radio("Select View Mode", ["Compiled View", "Thematic View", "AI Summary"])
         
         if view_mode == "Compiled View":
             st.header("Module & Video Feedback")
@@ -160,7 +162,7 @@ if __name__ == "__main__":
                             st.info("**Q3: Other Feedback?**")
                             st.write(r['q3'] if r['q3'] else "_No feedback_")
                         st.divider()
-        else:
+        elif view_mode == "Thematic View":
             st.header("Thematic Question Analysis")
             question_choice = st.selectbox(
                 "Select Question to Analyze",
@@ -179,3 +181,41 @@ if __name__ == "__main__":
                         st.markdown(f"**{r['name']}** ({r['module']} > {r['video']})")
                         st.write(r[q_key])
                         st.divider()
+        else:
+            st.header("🤖 AI Overall Summary")
+            st.write("Generate an overarching summary of all feedback using Gemini.")
+            
+            if st.button("Generate AI Summary"):
+                with st.spinner("Analyzing feedback..."):
+                    try:
+                        # Compile all feedback into a single prompt
+                        full_text = "Here is the feedback gathered for several training videos:\n\n"
+                        for r in records:
+                            full_text += f"Module: {r['module']}, Video: {r['video']}, User: {r['name']}\n"
+                            if r['q1']: full_text += f"- Incorrect/Updates: {r['q1']}\n"
+                            if r['q2']: full_text += f"- Missing/Requests: {r['q2']}\n"
+                            if r['q3']: full_text += f"- Other Suggestions: {r['q3']}\n"
+                            full_text += "\n"
+                        
+                        # Initialize Vertex AI
+                        vertexai.init()
+                        model = GenerativeModel("gemini-1.5-flash")
+                        
+                        prompt = f"""
+                        You are a senior educational designer. Analyze the following feedback from training videos.
+                        Provide a concise, overarching summary that includes:
+                        1. Key Themes: What are the recurring issues or compliments?
+                        2. Critical Updates: What are the most urgent corrections needed?
+                        3. Strategic Suggestions: Based on the "Other Suggestions" and missing elements, what are the top 3 improvements to make the training better overall?
+
+                        Feedback Data:
+                        {full_text}
+                        """
+                        
+                        response = model.generate_content(prompt)
+                        st.markdown("### 📝 Overall Summary")
+                        st.markdown(response.text)
+                        
+                    except Exception as e:
+                        st.error(f"Failed to generate summary: {e}")
+                        st.info("Ensure you are authenticated with Google Cloud and have a project selected.")
